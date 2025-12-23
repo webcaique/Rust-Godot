@@ -1,0 +1,153 @@
+Tipos Padrões (builtins)
+--> Tipos primitivos
+    int, float (f32), real (f64) e boll
+
+--> Tipos de String
+    GString: propósito geral;
+    StringName: uma string otimizada para ser identificadores de classes e ações;
+    NodePath: representa um caminho para um Node. Quando trabalhando com referências você pode passar strings do Rust como se fossem strings do Godot, ou usar os métodos from e into para convertê-las. Veja os exemplos:
+        label.set_text("ello"); // &str
+        let string = String::from("ello");
+        label.set_text(&string); // &String
+
+        label.set_text(&GString::from("ello")); // &GString
+        label.set_text(&"ello".into()); //&GString
+
+        // Para converter um StringName para GString chamamos o método `arg`
+        let string_name = StringName::from("ello");
+        label.set_text(string_name.arg()) // StringName -> GString
+
+--> Array e Dicionário
+    Array<T>: um array que consegue armazenar os tipos do Godot
+    VariantArray => alias para Array<Variant>, um array que aceita mais de um tipo
+    Dicionário: mapeia chave e valores, onde ambos são do tipo Variant
+        let arr: Array<i64> = array![1, 2, 3];
+        let varr: VariantArray = varray![1, "apples", false];
+        let dic: Dictionary = dict!{"fish": "net", 1: 0};
+    Eles acabam fazendo uma cópia do ponteiro quando clonados. Para acessar elementos e iterar sobre eles usamos dois métodos at e iter_shared:
+        let a = array![1, 2, 6, 3, 7, 0];
+        let b = dict!{1: 'a', 2: 'b', 3: 'c'};
+
+        println!("{}", a.at(1)); // 2
+        println!("{}", b.get(1).unwrap()); // 'a'
+
+        for el in a.iter_shared() {
+            println!("element: {el}");
+        }
+
+        for (key, value) in b.iter_shared() {
+            println!("{key}: {value}");
+        }
+
+    Packed*Array, em que * é o placeholder para outros tipos, como PackedByteArray PackedInt32Array e PackedVector2Array
+        let a = PackedByteArray::from(&[9, 1, 23]);
+        println!("{}", a[0]); // 9
+        a[0] = 127;
+
+        // Podemos transformar esse array em um slice
+        let b = a.subarray(0, 2);
+        b.as_slice(); // &[u8]
+    
+--> Tipos Geométricos
+    Vetores => tem 2, 3 ou 4 dimensões, sendo float ou int, são: Vector2, VEctor2i, Vector3, Vector3i, Vector4 e Vector4i (os que tem "i" são inteiros), eles podem ser acessados como um array
+        let position = Vector2::ZERO; // um vetor zerado
+        position.x += 1.0_f32;
+        println!("{position}"); // (1.0, 0.0)
+        println!("{}", position[1]); // 0.0
+
+    Caixa de colisão => Rct2, Rect2i e Aabb. Os dois primeiros tem um vetor position e outro size, o último é uma caixa 3d
+        // Criamos formas na posição zero com diferentes tamanhos.
+        let rect = Rect2::new(Vector2::ZERO, Vector2::new(1.0, 2.0));
+
+        let aabb = Aabb::new(Vector3::ZERO, Vector3::new(0.5, 3.0, 1.0));
+
+    Matrizes => usados para cálculo de renderização, movimentação, etc. São: Transform2D (2x3), Transform3D (3x4) e Basis (3x3), Projection (4x4).
+        let ident = Transform2D::IDENTITY; // matrix identidade
+        let mat = Basis::from_rows(Vector3::ZERO, Vector3::ONE, Vector3::splat(3)); // Uma matrix 3x3 com uma fileira de zeros, uma de 'uns' e outra de 'tres'
+
+    Miscelâneas: Tipos que não entram no padrão:
+        Color: um Vector4, possui 4 componentes para representar cores em RGBA (rgba);
+        ColorHsv: representa cores em HSVA, também possui 4 componentes (hsva);
+        RID: de resource ID, é um identificador para resources.
+        Callable: representa uma função dentro do Godot.
+        Signal: parte da API de sinais do Godot, veremos isso depois, ele também possui um par chamado TypedSignal. Você provavelmente vai querer usar o último.
+
+    OBJETOS: é uma instância de uma classe no Godot. É a classe mãe do tipos Node, Resource e RefCounted
+    #[derive(GodotClass)] => permite criarmos nossas próprías classes
+
+--> Herança e criação de classes
+    Rust não têm herança, mas é contornado por composição.
+    Toda classe que criamos no Rust terá uma classe base do Godot
+
+    - Pode ser herdada de Node, e atrelada a nossa árvore de nós e a cenas. Mas, precisa ser adicionada a cena e desalocada manualmente; ou
+    - Herdar de RefCounted, útil para mover dados sem interagir com a cena, a memória é gerenciada por contador de referências; ou
+    - Herdar diretamente de Object, o que é incomum, pois você precisará gerenciar a memória manualmente e não terá muitos benefícios. Use com cuidado!
+
+--> Ponteiro Inteligente Gd<T>
+    Responsável por:
+    - Armazena referência de todos os objetos do Godot;
+    - Gerenciar a memoria de tipos com contagem de referências;
+    - Garantir a mutabilidade interna;
+    - Detectar e prevenir vazamentos de memória e Undefined Behavior;
+    - Fazer uma ponte entre o Rust e o Godot engine.
+
+    Exemplos:
+    Gd<Node2d>; Gd<RigidBody2D>
+
+    Construir uma classe:
+        - Para contadores de referência usamos new_gd, como em TcpServer::new_gd(); Extenção do trait NewGd
+        - Para gerenciamento manual usamos new_alloc, como em Node2D::new_alloc(); Extenção do trait NewAlloc
+
+    Pode-se interagir com as classes usando:
+    - obter o ID do objeto com instance_id();
+    - conseguir uma nova referência com clone();
+    - destruir o objeto com free();
+    - Fazer comparações com outros objetos.
+
+    Você também pode converter seu objeto para outras classes herdadas ou herdeiras, up casting e down casting, respectivamente. 
+    
+    Veja um exemplo de down casting:
+        // down castings podem falhar
+        let node: Gd<Node> = ...;
+        // Vai dar certo com certeza
+        let node2d = node.cast::<Node2D>(); // ou
+        let node2d: Gd<Node2D> = node.cast(); 
+
+        // Talvez dê errado
+        let sprite: Result<Gd<Sprite2D>, Box<dyn std::error::Error>> = node.try_cast();
+
+    Exemplo de up castings
+        // Up castings sempre dão certo!
+        let node2d: Gd<Node2D>;
+        let node = node2d.upcast::<Node>();
+
+        // Também podemos criar referências
+        let noderef: &Node  = node2d.upcast_ref();
+
+    Por último, para liberar a memória dos nossos objetos quando criados com um new_alloc(), temos que chamar Gd::free() ou mover os objetos a um método que faça isso por nós, como queue_free(). Ao usarmos new_gd() nem temos que nos preocupar com isso. Felizmente, o compilador do Rust é poderoso o bastante para nos avisar se qualquer vazamento possa acontecer e nos ajudará a tratá-lo.
+
+
+    FUNÇÕES
+    Os métodos estão juntos com suas respectivas estruturas nos módulos godot::classes e godot::builtins. Além do mais, a maioria dos utilitários estão disponíveis em godot::prelude para serem acessados mais rápido.
+
+    Você pode chamar funções e métodos como em qualquer outra estrutura do Rust:
+
+    let node = Node::new_alloc();
+    let path = node.get_path();
+
+    let child = Node::new_alloc();
+    node.add_child(child);
+
+    Singletons
+    Singletons são classes que permitem acessar informações globais do Godot, como por exemplo eventos e entradas do usuário:
+        let input = Input::singleton() // ganhamos uma instância de Input
+        if input.is_key_pressed("up") {
+            position.y += 10;
+        }
+
+
+    Parâmetros padrão
+
+    No GDScript, parâmetros de funções podem ter um valor padrão que é utilizado quando um valor não é passado, isto não existe no Rust [1], então a API fornece uma interface diferente.
+
+    Imagine essa função do Godot:
